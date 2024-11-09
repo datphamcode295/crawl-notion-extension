@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "Notion Public Page Detector",
+  "version": "1.0",
+  "description": "Detects if a Notion page is public",
+  "permissions": ["activeTab"],
+  "content_scripts": [
+    {
+      "matches": ["*://*.notion.so/*", "*://*.notion.site/*"],
+      "js": ["content.js"]
+    }
+  ]
+}
