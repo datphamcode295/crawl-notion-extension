@@ -2,12 +2,20 @@
   "manifest_version": 3,
   "name": "Notion Public Page Detector",
   "version": "1.0",
+  "permissions": ["scripting", "webNavigation"],
+  "host_permissions": ["*://*.notion.so/*", "*://*.notion.site/*"],
   "description": "Detects if a Notion page is public",
-  "permissions": ["activeTab"],
+  "web_accessible_resources": [
+    {
+      "resources": ["inject.js"],
+      "matches": ["*://*.notion.so/*", "*://*.notion.site/*"]
+    }
+  ],
   "content_scripts": [
     {
       "matches": ["*://*.notion.so/*", "*://*.notion.site/*"],
-      "js": ["content.js"]
+      "js": ["content.js"],
+      "run_at": "document_start"
     }
   ]
 }
