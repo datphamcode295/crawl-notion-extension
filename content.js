@@ -66,12 +66,12 @@ function checkIfPublicPage(notionContent) {
             console.log('this is public');
             handleCrawling()
             // Set up content change observer
-            const contentObserver = new MutationObserver(handleContentChange);
-            contentObserver.observe(notionContent, {
-                childList: true,
-                subtree: true,
-                characterData: true,
-            });
+            // const contentObserver = new MutationObserver(handleContentChange);
+            // contentObserver.observe(notionContent, {
+            //     childList: true,
+            //     subtree: true,
+            //     characterData: true,
+            // });
             return;
         }
     }
