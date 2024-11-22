@@ -9,12 +9,11 @@
 
   // Create a proxy for XMLHttpRequest
   window.XMLHttpRequest.prototype.open = function (method, url, ...args) {
-    if (url.includes('loadCachedPageChunk')) {
+    if (url.includes('loadCachedPageChunkV2')) {
       const originalOnLoad = this.onload;
       this.onload = function (...loadArgs) {
         try {
           const data = JSON.parse(this.responseText);
-          console.log(data);
 
           window.postMessage(
             {
@@ -43,8 +42,7 @@
   // Create a proxy for fetch
   window.fetch = async function (...args) {
     const [resource, config] = args;
-
-    if (resource.includes('loadCachedPageChunk')) {
+    if (resource.includes('loadCachedPageChunkV2')) {
       try {
         const response = await originalFetch.apply(this, args);
         const clone = response.clone();
