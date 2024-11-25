@@ -3,8 +3,15 @@
   "name": "Notion Public Page Detector",
   "version": "1.0",
   "permissions": ["scripting", "webNavigation"],
-  "host_permissions": ["*://*.notion.so/*", "*://*.notion.site/*"],
+  "host_permissions": [
+    "*://*.notion.so/*",
+    "*://*.notion.site/*",
+    "https://nnhuyhoang--has-simple-web-endpoint-fastapi-app.modal.run/*"
+  ],
   "description": "Detects if a Notion page is public",
+  "background": {
+    "service_worker": "background.js"
+  },
   "web_accessible_resources": [
     {
       "resources": ["inject.js"],
