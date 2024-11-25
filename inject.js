@@ -1,78 +1,78 @@
 (function () {
-  // Ensure we only inject once
   if (window.__notionInterceptorInjected) return;
   window.__notionInterceptorInjected = true;
 
-  // Store original methods before any other scripts can modify them
   const originalFetch = window.fetch;
-  const originalXHR = window.XMLHttpRequest.prototype.open;
+  const requestStatuses = new Map();
 
-  // Create a proxy for XMLHttpRequest
-  window.XMLHttpRequest.prototype.open = function (method, url, ...args) {
-    if (url.includes('loadCachedPageChunkV2')) {
-      const originalOnLoad = this.onload;
-      this.onload = function (...loadArgs) {
-        try {
-          const data = JSON.parse(this.responseText);
-
-          window.postMessage(
-            {
-              type: 'notionDataCaptured',
-              detail: {
-                url,
-                data,
-                timestamp: new Date().toISOString(),
-                requestType: 'xhr',
-              },
-            },
-            '*'
-          );
-        } catch (error) {
-          console.error('[Notion Interceptor] XHR Parse Error:', error);
-        }
-
-        if (originalOnLoad) {
-          originalOnLoad.apply(this, loadArgs);
-        }
-      };
-    }
-    return originalXHR.apply(this, [method, url, ...args]);
-  };
-
-  // Create a proxy for fetch
   window.fetch = async function (...args) {
     const [resource, config] = args;
     if (resource.includes('loadCachedPageChunkV2')) {
+      requestStatuses.set(resource, 'pending');
       try {
         const response = await originalFetch.apply(this, args);
+        requestStatuses.set(resource, 'success');
         const clone = response.clone();
-
         clone.json().then((data) => {
           window.postMessage(
             {
               type: 'notionDataCaptured',
               detail: {
-                url: resource,
+                url: location.href,
                 data,
                 timestamp: new Date().toISOString(),
-                requestType: 'fetch',
+                status: 'normal',
               },
             },
             '*'
           );
         });
-
         return response;
       } catch (error) {
-        console.error('[Notion Interceptor] Fetch Error:', error);
+        requestStatuses.set(resource, 'cancelled');
         throw error;
       }
     }
-
     return originalFetch.apply(this, args);
   };
 
-  console.log(
-    '[Notion Interceptor] Successfully injected request interceptors'
-  );
+  const observer = new PerformanceObserver((list) => {
+    list.getEntries().forEach((entry) => {
+      if (
+        entry.name.includes('loadCachedPageChunkV2') &&
+        (requestStatuses.get(entry.name) === 'cancelled' ||
+          entry.transferSize === 0)
+      ) {
+        const pageId = extractPageId(location.href);
+        if (!pageId) return;
+
+        requestStatuses.delete(entry.name);
+        fetch(entry.name, {
+          method: 'POST',
+          headers: {
+            accept: '*/*',
+            'content-type': 'application/json',
+            'notion-audit-log-platform': 'web',
+            'x-notion-active-user-header':
+              document.cookie.match(/notion_user_id=([^;]+)/)?.[1] || '',
+          },
+          body: JSON.stringify({
+            page: { id: pageId },
+            limit: 30,
+            cursor: { stack: [] },
+            verticalColumns: false,
+          }),
+        });
+      }
+    });
+  });
+
+  observer.observe({ entryTypes: ['resource'] });
+
+  function extractPageId(url) {
+    const match = url.match(/([a-f0-9]{32})/);
+    return match
+      ? match[1].replace(/(.{8})(.{4})(.{4})(.{4})(.{12})/, '$1-$2-$3-$4-$5')
+      : null;
+  }
 })();
