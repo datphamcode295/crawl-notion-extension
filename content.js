@@ -9,243 +9,236 @@
 })();
 
 // Global state
-let updateTimeout = null;
-let lastEditTime = null;
 let notionResponse = null;
-// let contentObserver = null;
-
-let hasLoggedPublic = false;
-let callUpdateFirstTime = false;
-// store the timeout for checking if the page is public, to clear it when the page is changed
-let checkIfPublicPageTimeOut = null;
-// variable to check if the url is changed
+let notionResponseURL = '';
+let pageInitialized = false;
 let lastUrl = '';
-// max time to try to wait for checking if the page is public
-let countTry = 0;
-const MAX_TRY = 20;
+let isPageLoaded = false;
 
-// why for load complete
-initialize();
+// Start watching for Notion response immediately
+function startNotionResponseWatcher() {
+  console.log('Starting Notion response watcher...');
 
-function initialize() {
-  if (document.readyState !== 'complete') {
-    // wait for 0.1 second and check again
-    setTimeout(initialize, 100);
-    return;
-  }
-
-  console.log('readyState is complete');
-  const pageLoadObserver = new MutationObserver(async (mutations) => {
-    const url = location.href;
-
-    if (url !== lastUrl) {
-      cleanup();
-      await waitForLoad();
-      lastUrl = url;
+  window.addEventListener('message', function messageListener(event) {
+    if (event.data.type === 'notionDataCaptured') {
+      if (notionResponseURL !== event.data.detail.url || !notionResponse) {
+        notionResponseURL = event.data.detail.url;
+        notionResponse = event.data.detail.data;
+      }
     }
   });
+}
+
+// Initialize the main process
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initialize);
+} else {
+  initialize();
+}
+
+function initialize() {
+  // Start watching for Notion response immediately
+  startNotionResponseWatcher();
+
+  // Set up observer for page changes
+  const pageLoadObserver = new MutationObserver(handlePageChanges);
 
   // Start observing the document with the configured parameters
   pageLoadObserver.observe(document.body, {
     childList: true,
     subtree: true,
   });
+
+  // Start the initial page processing
+  startPageProcessing();
 }
 
-function checkIfPublicPage(notionContent) {
-  if (hasLoggedPublic) return;
-  countTry++;
+async function startPageProcessing() {
+  try {
+    // Wait for the page to be fully loaded
+    console.log('Waiting for page load...');
+    await waitForPageLoad();
 
-  // Look for the specific text pattern
-  const elements = document.querySelectorAll('.tx-uiregular-14-med');
+    isPageLoaded = true;
+
+    await waitForNotionResponse();
+
+    // If we already have the Notion response, process the content
+    if (notionResponse && !pageInitialized) {
+      const markdown = await processContent();
+
+      // Send the processed content to the server
+      if (markdown) {
+        await sendToServer(markdown);
+      }
+    }
+  } catch (error) {
+    console.error('Error in page processing:', error);
+  }
+}
+
+async function handlePageChanges(mutations) {
+  const currentUrl = location.href;
+
+  if (currentUrl !== lastUrl) {
+    console.log('URL changed, reinitializing...');
+    lastUrl = currentUrl;
+    pageInitialized = false;
+    isPageLoaded = false;
+
+    await startPageProcessing();
+  }
+}
+
+function waitForNotionResponse() {
+  return new Promise((resolve, reject) => {
+    console.log('Waiting for Notion response...');
+
+    // Resolve immediately if conditions are met
+    if (notionResponse && notionResponseURL === lastUrl) {
+      resolve();
+      return;
+    }
+
+    const MAX_WAIT_TIME = 30000; // 30 seconds timeout
+    const CHECK_INTERVAL = 100; // Check every 100ms
+    const startTime = Date.now();
+
+    const checkNotion = setInterval(() => {
+      if (notionResponse && notionResponseURL === lastUrl) {
+        clearInterval(checkNotion);
+        resolve();
+      } else if (Date.now() - startTime > MAX_WAIT_TIME) {
+        clearInterval(checkNotion);
+        reject(new Error('Timeout waiting for Notion response'));
+      }
+    }, CHECK_INTERVAL);
+  });
+}
+
+function waitForPageLoad() {
+  return new Promise((resolve, reject) => {
+    const maxAttempts = 30;
+    let attempts = 0;
+
+    function checkPageLoad() {
+      const notionContent = document.querySelector('.notion-page-content');
+      const notionTopBar = document.querySelector('.notion-topbar');
+      const isDocumentLoaded = document.readyState === 'complete';
+
+      if (notionContent && notionTopBar && isDocumentLoaded) {
+        console.log('Page elements found and document loaded');
+        resolve();
+      } else if (attempts >= maxAttempts) {
+        const missing = [];
+        if (!notionContent) missing.push('notion-page-content');
+        if (!notionTopBar) missing.push('notion-topbar');
+        if (!isDocumentLoaded) missing.push('document complete');
+        reject(
+          new Error(
+            `Timeout waiting for page elements. Missing: ${missing.join(', ')}`
+          )
+        );
+      } else {
+        attempts++;
+        console.log(`Checking page load attempt ${attempts}/${maxAttempts}...`);
+        setTimeout(checkPageLoad, 500);
+      }
+    }
+
+    checkPageLoad();
+  });
+}
+
+async function processContent() {
+  try {
+    if (!pageInitialized) {
+      const isPublic = await checkIfPublicPage();
+      if (isPublic) {
+        console.log('Processing public page...');
+        const markdown = processElements();
+
+        pageInitialized = true;
+
+        return markdown;
+      } else {
+        console.log('Page is not public');
+      }
+    }
+  } catch (error) {
+    console.error('Error processing content:', error);
+    pageInitialized = false; // Reset on error to allow retry
+  }
+}
+
+function checkIfPublicPage() {
+  return new Promise((resolve) => {
+    const maxAttempts = 20;
+    let attempts = 0;
+
+    function check() {
+      const elements = document.querySelectorAll('.tx-uiregular-14-med');
+
+      for (const element of elements) {
+        const text = element.textContent;
+        if (
+          text &&
+          text.includes('This page is live on') &&
+          text.includes('notion.site')
+        ) {
+          console.log('Found public page indicator');
+          resolve(true);
+          return;
+        }
+      }
+
+      if (attempts >= maxAttempts) {
+        console.log('No public page indicator found after max attempts');
+        resolve(false);
+      } else {
+        attempts++;
+        setTimeout(check, 500);
+      }
+    }
+
+    check();
+  });
+}
+
+function processElements() {
+  const elements = document.querySelectorAll('[data-block-id]');
+
+  const elementMarkdown = [];
+
+  const title = extractNotionTitle(location.href);
+
+  elementMarkdown.push({
+    type: 'title',
+    content: `# ${title}`,
+  });
 
   for (const element of elements) {
-    const text = element.textContent;
-    if (
-      text &&
-      text.includes('This page is live on') &&
-      text.includes('notion.site')
-    ) {
-      hasLoggedPublic = true;
-      console.log('this is public');
-      handleCrawling();
-      // Set up content change observer
-      // const contentObserver = new MutationObserver(handleContentChange);
-      // contentObserver.observe(notionContent, {
-      //     childList: true,
-      //     subtree: true,
-      //     characterData: true,
-      // });
-      return;
-    }
-  }
+    let type = 'text';
+    const blockID = element.dataset.blockId;
+    const respElement = notionResponse?.recordMap?.block[blockID];
 
-  console.log('this is private');
-  // re call it after 1 second in 10 times
-  if (countTry < MAX_TRY) {
-    checkIfPublicPageTimeOut = setTimeout(() => {
-      checkIfPublicPage(notionContent);
-    }, 500);
-  }
-}
-
-function handleContentChange(mutations) {
-  if (!callUpdateFirstTime) {
-    callUpdateFirstTime = true;
-    return false;
-  }
-
-  // Filter out non-content changes
-  const hasContentChange = mutations.some((mutation) => {
-    // Check if it's a text content change
-    if (mutation.type === 'characterData') {
-      return true;
+    if (respElement) {
+      type = respElement.value?.value?.type ?? respElement.value.type;
     }
 
-    // Check for added or removed nodes that contain text
-    if (mutation.type === 'childList') {
-      const addedNodes = Array.from(mutation.addedNodes);
-      const removedNodes = Array.from(mutation.removedNodes);
-
-      const hasTextChange = [...addedNodes, ...removedNodes].some((node) => {
-        // Check if the node is a text node or contains text
-        return (
-          node.nodeType === Node.TEXT_NODE ||
-          (node.textContent && node.textContent.trim().length > 0)
-        );
+    const markdown = elementToMarkdown(element);
+    if (markdown) {
+      elementMarkdown.push({
+        type: type,
+        content: markdown,
       });
-
-      return hasTextChange;
     }
-
-    return false;
-  });
-
-  if (!hasContentChange) return;
-
-  // Clear existing timeout if there is one
-  if (updateTimeout) {
-    clearTimeout(updateTimeout);
   }
-
-  lastEditTime = Date.now();
-
-  // Set new timeout
-  updateTimeout = setTimeout(() => {
-    const timeSinceLastEdit = Date.now() - lastEditTime;
-    if (timeSinceLastEdit >= 3000) {
-      // 10 seconds
-      handleCrawling();
-    }
-  }, 3000);
+  return elementMarkdown;
 }
 
-// Wait for the page to be fully loaded
-async function waitForLoad() {
-  const notionContent = document.querySelector('.notion-page-content');
-  const isPageLoaded = document.readyState === 'complete';
-  const notionTopBar = document.querySelector('.notion-topbar');
-
-  await waitForNotionResponse();
-
-  if (notionContent && isPageLoaded && notionTopBar) {
-    checkIfPublicPage(notionContent);
-  } else {
-    // If not loaded yet, wait and try again
-    setTimeout(waitForLoad, 500);
-  }
-}
-
-// cleanup and reset all the global variables when the page is changed
-function cleanup() {
-  if (updateTimeout) {
-    clearTimeout(updateTimeout);
-    updateTimeout = null;
-  }
-
-  hasLoggedPublic = false;
-  updateTimeout = null;
-  lastEditTime = null;
-  callUpdateFirstTime = false;
-  checkIfPublicPageTimeOut = null;
-  countTry = 0;
-}
-
-async function handleCrawling() {
-  try {
-    // Process elements after page is fully loaded and API response is available
-    const markdown = processElements();
-
-    // Set up observer for future changes
-  } catch (error) {
-    console.error('Error initializing:', error);
-  }
-}
-
-/**
- * Page load and content waiting functions
- */
-function waitForNotionContent() {
-  return new Promise((resolve) => {
-    function checkContent() {
-      const notionContent = document.querySelector('.notion-page-content');
-      if (notionContent) {
-        resolve(notionContent);
-      } else {
-        requestAnimationFrame(checkContent);
-      }
-    }
-    checkContent();
-  });
-}
-
-function waitForCompleteLoad() {
-  return new Promise((resolve) => {
-    if (document.readyState === 'complete') {
-      resolve();
-    } else {
-      window.addEventListener('load', resolve, { once: true });
-    }
-  });
-}
-
-async function waitForNotionResponse() {
-  return new Promise((resolve) => {
-    if (notionResponse) {
-      resolve(notionResponse);
-      return;
-    }
-
-    const messageListener = (event) => {
-      if (event.data.type === 'notionDataCaptured') {
-        notionResponse = event.data.detail.data;
-        window.removeEventListener('message', messageListener);
-        resolve(notionResponse);
-      }
-    };
-
-    window.addEventListener('message', messageListener);
-  });
-}
-
-/**
- * Content observation and change handling
- */
-
-function handleContentChange() {
-  if (updateTimeout) {
-    clearTimeout(updateTimeout);
-  }
-
-  lastEditTime = Date.now();
-
-  updateTimeout = setTimeout(() => {
-    const timeSinceLastEdit = Date.now() - lastEditTime;
-    if (timeSinceLastEdit >= 10000) {
-      handleCrawling();
-    }
-  }, 10000);
-}
+// Keep your existing elementToMarkdown, processingBulletList,
+// processingCodeBlock, and other helper functions here...
 
 function elementToMarkdown(element) {
   const classToMarkdown = {
@@ -289,10 +282,13 @@ function elementToMarkdown(element) {
 function processingBulletList(element) {
   const blockID = element.dataset.blockId;
   const bulletedBlock = notionResponse?.recordMap?.block[blockID];
-
+  let bullet = '';
   if (bulletedBlock) {
-    const value = bulletedBlock.value.value.properties.title[0][0];
-    return `- ${value}`;
+    const value = bulletedBlock.value?.value ?? bulletedBlock.value;
+    if (value.properties) {
+      bullet = value.properties.title[0][0];
+      return `- ${bullet}`;
+    }
   }
   return '- ' + element.textContent;
 }
@@ -300,12 +296,15 @@ function processingBulletList(element) {
 function processingCodeBlock(element) {
   const blockID = element.dataset.blockId;
   const codeBlock = notionResponse?.recordMap?.block[blockID];
-
+  let code = '';
   if (codeBlock) {
-    const code = codeBlock.value.value.properties.title[0][0];
-    return '```\n' + code + '\n```';
+    const value = codeBlock.value?.value ?? codeBlock.value;
+    if (value.properties) {
+      code = value.properties.title[0][0];
+      return '```\n' + code + '\n```';
+    }
   }
-  return element.innerHTML;
+  return element.textContent;
 }
 
 function cleanCellContent(text) {
@@ -374,27 +373,45 @@ function htmlTableToMardownTable(htmlContent) {
   return markdownOutput.join('\n').replace(/\n+$/, '\n');
 }
 
-function processElements() {
-  const elements = document.querySelectorAll('[data-block-id]');
+function extractNotionTitle(url) {
+  try {
+    const pathname = new URL(url).pathname;
+    // Split the pathname by '/' and get the last segment
+    const lastSegment = pathname.split('/').pop();
 
-  const elementMarkdown = [];
-
-  for (const element of elements) {
-    let type = 'text';
-    const blockID = element.dataset.blockId;
-    const respElement = notionResponse?.recordMap?.block[blockID];
-
-    if (respElement) {
-      type = respElement.value.value.type;
+    // If there's a hex string at the end (32 chars), remove it
+    const titleWithHex = lastSegment.split('-');
+    if (titleWithHex[titleWithHex.length - 1].length === 32) {
+      titleWithHex.pop();
     }
 
-    const markdown = elementToMarkdown(element);
-    if (markdown) {
-      elementMarkdown.push({
-        type: type,
-        content: markdown,
-      });
-    }
+    // Join remaining parts and replace hyphens with spaces
+    const title = titleWithHex.join('-').replace(/-/g, ' ');
+
+    return title;
+  } catch (error) {
+    return null;
   }
-  return elementMarkdown;
+}
+
+async function sendToServer(markdownData) {
+  // Get the current URL and page title
+  const pageUrl = window.location.href;
+
+  // Prepare the payload
+  const payload = {
+    url: pageUrl,
+    data: markdownData,
+  };
+
+  try {
+    const response = await chrome.runtime.sendMessage({
+      type: 'sendMarkdown',
+      payload: payload,
+    });
+    return response;
+  } catch (error) {
+    console.error('Failed to send message:', error);
+    throw error;
+  }
 }
