@@ -11,6 +11,7 @@
 // Global state
 let notionResponse = null;
 let notionResponseURL = '';
+let notionResponseWorkspaceName = '';
 let pageInitialized = false;
 let lastUrl = '';
 let isPageLoaded = false;
@@ -24,6 +25,7 @@ function startNotionResponseWatcher() {
       if (notionResponseURL !== event.data.detail.url || !notionResponse) {
         notionResponseURL = event.data.detail.url;
         notionResponse = event.data.detail.data;
+        notionResponseWorkspaceName = event.data.detail.workspaceName;
       }
     }
   });
@@ -212,29 +214,15 @@ function processElements() {
 
   const title = extractNotionTitle(location.href);
 
-  elementMarkdown.push({
-    type: 'title',
-    content: `# ${title}`,
-  });
+  elementMarkdown.push(`# ${title}`);
 
   for (const element of elements) {
-    let type = 'text';
-    const blockID = element.dataset.blockId;
-    const respElement = notionResponse?.recordMap?.block[blockID];
-
-    if (respElement) {
-      type = respElement.value?.value?.type ?? respElement.value.type;
-    }
-
     const markdown = elementToMarkdown(element);
     if (markdown) {
-      elementMarkdown.push({
-        type: type,
-        content: markdown,
-      });
+      elementMarkdown.push(markdown);
     }
   }
-  return elementMarkdown;
+  return elementMarkdown.join('\n\n');
 }
 
 // Keep your existing elementToMarkdown, processingBulletList,
@@ -402,6 +390,7 @@ async function sendToServer(markdownData) {
   const payload = {
     url: pageUrl,
     data: markdownData,
+    workspaceName: notionResponseWorkspaceName,
   };
 
   try {

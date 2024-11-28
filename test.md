@@ -1,3 +1,5 @@
+# FornaxAI Project Info
+
 # Project Summary
 
 | Project title       | FornaxAI                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
@@ -283,6 +285,8 @@ graph TD
     StepExtractImagesCheckError -->|Error| ErrorHandler
     StepExtractImagesCheckError -->|No Error| StepImageMagick
 ```
+
+- PDF Report Service
 
 - PDF Report Service
 
@@ -603,3 +607,5 @@ To deploy the `generate-service` application:
   
 Happy coding!
 ```
+
+fdf
