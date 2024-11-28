@@ -4,29 +4,53 @@
 
   const originalFetch = window.fetch;
   const requestStatuses = new Map();
+  let pendingResponses = {
+    loadCachedPageChunkV2: null,
+    getPublicPageData: null,
+  };
 
   window.fetch = async function (...args) {
     const [resource, config] = args;
-    if (resource.includes('loadCachedPageChunkV2')) {
+
+    if (
+      resource.includes('loadCachedPageChunkV2') ||
+      resource.includes('getPublicPageData')
+    ) {
       requestStatuses.set(resource, 'pending');
       try {
         const response = await originalFetch.apply(this, args);
         requestStatuses.set(resource, 'success');
         const clone = response.clone();
-        clone.json().then((data) => {
+        const data = await clone.json();
+
+        if (resource.includes('loadCachedPageChunkV2')) {
+          pendingResponses.loadCachedPageChunkV2 = data;
+        } else {
+          pendingResponses.getPublicPageData = data;
+        }
+
+        if (
+          pendingResponses.loadCachedPageChunkV2 &&
+          pendingResponses.getPublicPageData
+        ) {
           window.postMessage(
             {
               type: 'notionDataCaptured',
               detail: {
                 url: location.href,
-                data,
+                data: pendingResponses.loadCachedPageChunkV2,
+                workspaceName: pendingResponses.getPublicPageData.spaceName,
                 timestamp: new Date().toISOString(),
                 status: 'normal',
               },
             },
             '*'
           );
-        });
+          pendingResponses = {
+            loadCachedPageChunkV2: null,
+            getPublicPageData: null,
+          };
+        }
         return response;
       } catch (error) {
         requestStatuses.set(resource, 'cancelled');
