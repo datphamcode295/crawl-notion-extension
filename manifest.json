@@ -6,7 +6,7 @@
   "host_permissions": [
     "*://*.notion.so/*",
     "*://*.notion.site/*",
-    "https://nnhuyhoang--has-simple-web-endpoint-fastapi-app.modal.run/*"
+    "https://datpvworkspace--has-simple-web-endpoint-fastapi-app.modal.run/*"
   ],
   "description": "Detects if a Notion page is public",
   "background": {

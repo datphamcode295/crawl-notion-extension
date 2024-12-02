@@ -1,7 +1,7 @@
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'sendMarkdown') {
     fetch(
-      'https://nnhuyhoang--has-simple-web-endpoint-fastapi-app.modal.run/api/upload',
+      'https://datpvworkspace--has-simple-web-endpoint-fastapi-app.modal.run/api/upload',
       {
         method: 'POST',
         headers: {
