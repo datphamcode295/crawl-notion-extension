@@ -179,23 +179,17 @@ function checkIfPublicPage() {
     let attempts = 0;
 
     function check() {
-      const elements = document.querySelectorAll('.tx-uiregular-14-med');
+      // Check if URL contains notion.site
+      const currentUrl = window.location.href;
 
-      for (const element of elements) {
-        const text = element.textContent;
-        if (
-          text &&
-          text.includes('This page is live on') &&
-          text.includes('notion.site')
-        ) {
-          console.log('Found public page indicator');
-          resolve(true);
-          return;
-        }
+      if (currentUrl.includes('notion.site')) {
+        console.log('Found public Notion site URL');
+        resolve(true);
+        return;
       }
 
       if (attempts >= maxAttempts) {
-        console.log('No public page indicator found after max attempts');
+        console.log('Not a public Notion site after max attempts');
         resolve(false);
       } else {
         attempts++;
